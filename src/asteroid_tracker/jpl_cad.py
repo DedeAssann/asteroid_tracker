@@ -64,9 +64,9 @@ def download_close_approaches(config, force=False):
     target = child_path(data_dir / "raw", filename)
 
     if target.exists() and not force:
-        raise FileExistsError(
-            f"File already exists: {target}; use --force to replace it"
-        )
+        # Treat an existing raw payload as a valid local cache. This keeps
+        # repeated Colab/ENSMA runs idempotent and avoids unnecessary API calls.
+        return target
 
     payload = fetch_close_approaches(config)
     target.parent.mkdir(parents=True, exist_ok=True)
