@@ -1,12 +1,22 @@
-# Relative directories resolve against the repository root, never the cwd.
+# Relative directories resolve against the repository root.
 paths:
   data: data
   outputs: outputs
+
+jpl_cad:
+  endpoint: https://ssd-api.jpl.nasa.gov/cad.api
+  expected_version: "1.5"
+  query:
+    date-min: now
+    date-max: "+30"
+    dist-max: "0.05"
+    body: Earth
+    neo: "true"
+    sort: dist
+    diameter: "true"
+    fullname: "true"
+
 pipeline:
-  input: example.csv
-  summary: summary.json
-download:
-  # Empty URL generates a deterministic toy dataset, without network access.
-  url: null
-  sha256: null
-  filename: example.csv
+  raw_json: cad_close_approaches.json
+  processed_csv: cad_close_approaches.csv
+  summary_json: summary.json
