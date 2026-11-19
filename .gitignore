@@ -1,0 +1,54 @@
+# Data and generated results: retain the directory structure only.
+/data/**
+!/data/raw/
+!/data/interim/
+!/data/processed/
+!/data/raw/.gitkeep
+!/data/interim/.gitkeep
+!/data/processed/.gitkeep
+/outputs/**
+!/outputs/.gitkeep
+# Large artifacts, wherever created.
+*.zip
+*.tar
+*.gz
+*.7z
+*.parquet
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pt
+*.pth
+*.onnx
+*.pkl
+# Secrets and local settings.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+*service-account*.json
+kaggle.json
+.aws/
+.azure/
+.ssh/
+# Environments, Python, notebooks and IDEs.
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+/wheelhouse/
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

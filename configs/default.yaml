@@ -1,0 +1,12 @@
+# Relative directories resolve against the repository root, never the cwd.
+paths:
+  data: data
+  outputs: outputs
+pipeline:
+  input: example.csv
+  summary: summary.json
+download:
+  # Empty URL generates a deterministic toy dataset, without network access.
+  url: null
+  sha256: null
+  filename: example.csv
