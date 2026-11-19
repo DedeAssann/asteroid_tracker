@@ -1,14 +1,22 @@
 import argparse
-from scientific_project.config import load_config
-from scientific_project.data import download_data
+
+from asteroid_tracker.config import load_config
+from asteroid_tracker.jpl_cad import download_close_approaches
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate demo data or download a public dataset")
+    parser = argparse.ArgumentParser(
+        description="Download NASA/JPL NEO close-approach data"
+    )
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    print(download_data(load_config(args.config), force=args.force))
+
+    target = download_close_approaches(
+        load_config(args.config),
+        force=args.force,
+    )
+    print(target)
 
 
 if __name__ == "__main__":
