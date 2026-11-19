@@ -1,4 +1,4 @@
-name: scientific-project
+name: asteroid-tracker
 channels:
   - conda-forge
 dependencies:
