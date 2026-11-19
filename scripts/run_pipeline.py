@@ -1,13 +1,17 @@
 import argparse
-from scientific_project.config import load_config
-from scientific_project.pipeline import run_pipeline
+
+from asteroid_tracker.config import load_config
+from asteroid_tracker.pipeline import run_pipeline
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Summarize the input CSV")
+    parser = argparse.ArgumentParser(
+        description="Normalize and summarize JPL close-approach data"
+    )
     parser.add_argument("--config", default="configs/default.yaml")
     args = parser.parse_args()
-    print(run_pipeline(load_config(args.config)))
+    result = run_pipeline(load_config(args.config))
+    print(result)
 
 
 if __name__ == "__main__":
