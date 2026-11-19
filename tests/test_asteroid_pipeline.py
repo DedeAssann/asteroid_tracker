@@ -70,3 +70,24 @@ def test_zero_count_payload_returns_empty_dataframe():
 
     frame = payload_to_dataframe(payload)
     assert frame.empty
+
+
+def test_existing_raw_payload_is_reused_without_network(tmp_path, monkeypatch):
+    from asteroid_tracker.jpl_cad import download_close_approaches
+
+    monkeypatch.setenv("SCI_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("SCI_OUTPUT_DIR", str(tmp_path / "outputs"))
+
+    raw = tmp_path / "data" / "raw" / "cad_close_approaches.json"
+    raw.parent.mkdir(parents=True)
+    raw.write_text('{"cached": true}', encoding="utf-8")
+
+    config = {
+        "paths": {"data": "data", "outputs": "outputs"},
+        "jpl_cad": {"endpoint": "https://example.invalid"},
+        "pipeline": {"raw_json": "cad_close_approaches.json"},
+    }
+
+    result = download_close_approaches(config, force=False)
+    assert result == raw
+    assert raw.read_text(encoding="utf-8") == '{"cached": true}'
