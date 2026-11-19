@@ -1,181 +1,142 @@
-# Modèle de projet scientifique Python portable
+# Asteroid Tracker
 
-Petit pipeline CPU, sans compte cloud ni secret : un CSV de démonstration contient
-les valeurs 1 à 5, puis le pipeline écrit une moyenne de 3 dans `outputs/summary.json`.
-Python **3.10 minimum**, 3.11 conseillé. Git sert à cloner/versionner ; pip et un
-accès réseau sont nécessaires à l'installation initiale. Aucun GPU nécessaire.
+Portable scientific Python project for exploring **near-Earth object (NEO) close approaches** using official NASA/JPL SSD/CNEOS data.
 
-## Démarrage Windows / WSL / Linux
+## Current milestone — v0.1
 
-Après avoir extrait ce modèle et publié votre propre dépôt, ou après un clonage :
+The first version intentionally focuses on a small, reproducible pipeline:
 
-```text
-git clone <URL_DE_VOTRE_DEPOT>
-cd <NOM_DU_DEPOT>
+1. query the JPL SBDB Close-Approach Data (CAD) API;
+2. cache the raw JSON response locally;
+3. validate the API payload/version;
+4. normalize the records into a CSV table;
+5. derive useful physical quantities, including km and lunar distances;
+6. produce a compact JSON summary;
+7. test the parser offline.
+
+The default query retrieves Earth close approaches by NEOs over the next 30 days, within **0.05 au**, sorted by nominal approach distance.
+
+> A close approach is **not** the same thing as an impact threat. This project does not currently estimate impact probability. A later version may integrate JPL Sentry for that purpose.
+
+## Data source
+
+NASA/JPL SSD/CNEOS — SBDB Close-Approach Data API  
+https://ssd-api.jpl.nasa.gov/doc/cad.html
+
+The JPL API is treated as the scientific source of truth. The client checks the advertised API version before parsing and stores the raw response so results can be traced back to the source payload.
+
+## Quick start
+
+Python **3.10+**.
+
+### Windows
+
+```powershell
 python manage.py setup
 python manage.py download
 python manage.py run
 python manage.py test
 ```
 
-Sur Windows, remplacer `python` par `py -3.11` si nécessaire. Sur WSL/Linux,
-utiliser `python3` si `python` n'existe pas. `setup` crée `.venv`, installe le
-projet en mode éditable et les dépendances. Les autres commandes utilisent
-automatiquement ce même environnement : aucune activation PowerShell requise.
-Ne partagez pas `.venv` entre Windows et WSL : créez un clone et un environnement
-dans chaque système. Si `venv` est indisponible, utiliser Conda ou demander
-l'installation du composant Python correspondant à l'administrateur.
+### Conda / Colab / ENSMA
 
-`download` refuse d'écraser un fichier existant ; `python manage.py download --force`
-le remplace explicitement. `run` remplace le résumé précédent.
-
-## Conda (alternative)
-
-Depuis la racine du dépôt :
-
-```text
-conda env create -f environment.yml
-conda activate scientific-project
+```bash
+pip install -r requirements.txt
 python manage.py download --current
 python manage.py run --current
 python manage.py test --current
 ```
 
-`--current` force l'interpréteur actif, même si une ancienne `.venv` existe.
-Le YAML Conda réutilise `requirements.txt` : PyYAML est la seule dépendance
-d'exécution et pytest la seule dépendance de test. Le backend d'installation est
-setuptools. Pas de NumPy, pandas, Jupyter, SDK cloud ou dotenv imposé.
-Les versions sont bornées, pas verrouillées : pour une publication scientifique,
-archiver aussi la version Python, le commit, la config, les sommes des données
-et `python -m pip freeze` depuis l'environnement effectivement utilisé.
+To refresh the locally cached JPL payload:
 
-## Google Colab
-
-Dans un notebook Colab vierge, remplacer l'URL et le nom du dossier :
-
-```python
-!git clone https://github.com/VOTRE_COMPTE/VOTRE_DEPOT.git
-%cd /content/VOTRE_DEPOT
-%pip install -r requirements.txt
-!python manage.py download --current
-!python manage.py run --current
-!python manage.py test --current
+```bash
+python manage.py download --force
 ```
 
-Le notebook `notebooks/01_demo.ipynb` montre ensuite les imports du package.
-Ne pas stocker de token dans les cellules ni dans l'URL Git. Les commandes de
-clonage ci-dessus supposent un dépôt public ; gérer un dépôt privé séparément
-avec les mécanismes d'authentification de la plateforme.
+## Outputs
 
-Le disque de la VM Colab est temporaire. Télécharger le résultat avant de
-quitter la session :
-
-```python
-from google.colab import files
-files.download("outputs/summary.json")
-```
-
-Ou monter Drive explicitement et définir les chemins **avant** le pipeline :
-
-```python
-from google.colab import drive
-import os
-drive.mount("/content/drive")
-os.environ["SCI_DATA_DIR"] = "/content/drive/MyDrive/scientific-project/data"
-os.environ["SCI_OUTPUT_DIR"] = "/content/drive/MyDrive/scientific-project/outputs"
-```
-
-Cette option demande l'autorisation Drive interactive de Colab et n'est pas
-nécessaire au démarrage. Le modèle ne monte aucun stockage automatiquement.
-
-## ENSMA
-
-Suivre [docs/ensma_setup.md](docs/ensma_setup.md) : installation dans un espace
-utilisateur, sans `sudo`, avec une alternative Conda et une préparation hors ligne.
-Aucun serveur, proxy, chemin réseau ou quota ENSMA n'est supposé connu.
-
-## Organisation
+After a successful run:
 
 ```text
-src/scientific_project/  logique réutilisable, configuration et chemins
-notebooks/              exploration ; retirer les sorties avant commit
-scripts/                entrées CLI, téléchargement et audit de secrets
-configs/                configurations YAML sans informations sensibles
-tests/                  tests hors ligne avec répertoires temporaires
-data/raw/               données sources, jamais modifiées par le pipeline
-data/interim/           transformations intermédiaires (réservé)
-data/processed/         données prêtes à analyser (réservé)
-outputs/                résultats régénérables
-docs/                   procédures et conventions
+data/raw/cad_close_approaches.json
+data/processed/cad_close_approaches.csv
+outputs/summary.json
 ```
 
-## Chemins et configuration
+These generated files are ignored by Git and can be recreated from the API.
 
-`pathlib` ancre les chemins relatifs à la racine du clone, indépendamment du dossier
-courant. Installation éditable requise ; ce modèle est conçu pour être exécuté
-depuis un clone, pas distribué comme une wheel autonome. Les noms de fichiers
-d'entrée/sortie doivent rester dans leur répertoire configuré.
+The processed table adds, when possible:
 
-Priorité : variables `SCI_DATA_DIR` / `SCI_OUTPUT_DIR`, puis YAML, puis valeurs par
-défaut. `.env.example` documente ces variables ; aucun `.env` n'est créé ou chargé.
+- nominal distance in au;
+- distance in km;
+- distance in lunar distances;
+- relative velocity in km/s;
+- diameter in metres when JPL provides a measured/estimated diameter.
 
-PowerShell : `$env:SCI_DATA_DIR = 'D:/datasets/mon-projet'`.
-Bash : `export SCI_DATA_DIR="$HOME/datasets/mon-projet"`.
-Notebook : `os.environ["SCI_DATA_DIR"] = "/chemin/data"`.
+## Project structure
 
 ```text
-python manage.py download --config configs/default.yaml
-python manage.py run --config configs/default.yaml
+asteroid_tracker/
+├── configs/
+│   └── default.yaml
+├── data/
+│   ├── raw/
+│   ├── interim/
+│   └── processed/
+├── outputs/
+├── scripts/
+│   ├── download_data.py
+│   └── run_pipeline.py
+├── src/
+│   └── asteroid_tracker/
+│       ├── config.py
+│       ├── jpl_cad.py
+│       ├── paths.py
+│       └── pipeline.py
+├── tests/
+│   └── test_asteroid_pipeline.py
+├── environment.yml
+├── manage.py
+├── pyproject.toml
+└── requirements.txt
 ```
 
-Les scripts sont aussi exécutables directement avec le Python de l'environnement :
-`python scripts/run_pipeline.py --config configs/default.yaml`.
-Pour des données publiques, renseigner `download.url` (HTTPS sans identifiants
-ni paramètres de requête), `download.sha256` (obligatoire) et `download.filename`.
-Adapter `pipeline.input` au même nom. L'exemple attend un CSV avec une colonne
-numérique `value` ; adapter le lecteur pour vos vrais jeux de données.
-Le téléchargement utilise des blocs de 1 Mio et vérifie le hash avant de remplacer
-le fichier final. Le pipeline de démonstration charge le CSV en mémoire : il ne
-prétend pas traiter de gros datasets. Aucun téléchargement réseau n'est fait par défaut.
+## Scientific roadmap
 
-## Git et secrets
+### v0.1 — ingestion
+JPL CAD ingestion, local caching, normalized table, basic derived quantities and offline parser tests.
 
-Les données, résultats, environnements et principaux formats volumineux sont
-ignorés ; seuls les `.gitkeep` préservent les dossiers. Les CSV stockés ailleurs
-que dans `data/` restent versionnables : ranger les datasets dans `data/` ou hors
-du dépôt. Git n'est pas un stockage de gros datasets ; documenter leur provenance,
-licence et SHA-256. Retirer les sorties des notebooks avant de les versionner.
+### v0.2 — analysis
+Exploratory plots and rankings:
+- closest approaches;
+- relative velocity;
+- absolute magnitude;
+- diameter where available;
+- uncertainty-aware presentation.
 
-Pour transformer le dossier extrait en dépôt (aucun commit automatique) :
+### v0.3 — object enrichment
+Use the JPL SBDB API to retrieve orbital and physical information for selected objects.
 
-```text
-git init
-git add .
-python manage.py check-secrets
-git diff --cached --stat
-git commit -m "Initial scientific project template"
-```
+### v0.4 — orbital layer
+Optional orbital elements / ephemeris integration, potentially through JPL Horizons.
 
-Répéter l'audit après `git add` avant chaque commit. Il examine le contenu de
-l'index Git, y compris les fichiers déjà suivis malgré `.gitignore`. Un code de
-sortie non nul signale un problème. Sans dépôt :
-`python manage.py check-secrets --source-tree` inspecte les sources distribuables.
-L'audit reconnaît des formats courants et des fichiers sensibles ; c'est une
-heuristique, pas une garantie, et il n'inspecte pas l'historique Git. Un secret
-déjà commité doit être révoqué auprès du fournisseur et l'historique traité
-séparément. Le modèle ne modifie aucun credential.
+### v1.0 — tracker
+Interactive interface built on top of the validated scientific pipeline.
 
-## Kaggle / Azure ultérieurement
+## Reproducibility
 
-Les mêmes commandes pip fonctionnent dans un environnement Python compatible
-où l'installation est autorisée. Configurer les chemins absolus des volumes
-montés via les deux variables ; utiliser un dossier de sorties accessible en
-écriture. Un dataset monté en lecture seule doit déjà contenir `raw/example.csv`
-(ou adapter le code/configuration à son organisation) : ne pas lancer `download`
-sur ce volume. Aucune ressource, souscription, API ou instance cloud n'est créée.
-Ces plateformes ne sont pas validées par ce modèle initial.
+Code, configuration, tests and documentation belong in Git. Raw API data and generated outputs do not.
 
-## Références
+The goal is for the same repository to run on:
+- a local Windows/WSL machine;
+- Google Colab;
+- ENSMA computers;
+- other Linux/cloud environments later.
 
-- [Environnements Conda](https://docs.conda.io/projects/conda/en/stable/user-guide/tasks/manage-environments.html)
-- [FAQ Colab : durée de vie des VM et stockage](https://research.google.com/colaboratory/faq.html)
+## JPL API etiquette
+
+The project intentionally performs one request at a time and caches the raw response instead of polling repeatedly. The User-Agent identifies the project and links back to this repository.
+
+## Status
+
+**v0.1 implementation in progress.**
