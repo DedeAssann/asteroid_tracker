@@ -1,31 +1,87 @@
-"""Cross-platform commands; setup creates .venv without shell activation."""
+"""Cross-platform project commands.
+
+Local Windows/Linux usage prefers a repository-local .venv.
+Notebook/cloud runtimes such as Google Colab use the current interpreter instead,
+because creating a nested venv there is unnecessary and may fail when ensurepip
+is unavailable.
+"""
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
 import venv
 
 ROOT = Path(__file__).resolve().parent
-VENV_PYTHON = ROOT / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+VENV_PYTHON = ROOT / ".venv" / (
+    "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+)
+
+
+def running_in_colab():
+    """Return True when running inside a Google Colab runtime."""
+    return bool(
+        os.environ.get("COLAB_RELEASE_TAG")
+        or os.environ.get("COLAB_BACKEND_VERSION")
+        or "google.colab" in sys.modules
+    )
+
+
+def selected_python(force_current=False):
+    """Choose the interpreter for project commands."""
+    if force_current or running_in_colab():
+        return sys.executable
+    if VENV_PYTHON.exists():
+        return str(VENV_PYTHON)
+    return sys.executable
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["setup", "test", "download", "run", "check-secrets"])
-    parser.add_argument("--current", action="store_true", help="Use current Python (Conda/Colab)")
+    parser.add_argument(
+        "command",
+        choices=["setup", "test", "download", "run", "check-secrets"],
+    )
+    parser.add_argument(
+        "--current",
+        action="store_true",
+        help="Use the current Python (Conda/Colab) instead of .venv",
+    )
     args, extra = parser.parse_known_args()
+
     if args.command == "setup":
         if sys.version_info < (3, 10):
             parser.error("Python 3.10 or newer is required")
-        if not args.current:
+
+        use_current = args.current or running_in_colab()
+
+        if not use_current:
             venv.EnvBuilder(with_pip=True).create(ROOT / ".venv")
-        python = sys.executable if args.current else str(VENV_PYTHON)
-        command = ["-m", "pip", "install", "-r", "requirements.txt"]
+            python = str(VENV_PYTHON)
+        else:
+            python = sys.executable
+
+        command = [
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements.txt",
+        ]
     else:
-        python = str(VENV_PYTHON) if VENV_PYTHON.exists() and not args.current else sys.executable
-        command = {"test": ["-m", "pytest"], "download": ["scripts/download_data.py"],
-                   "run": ["scripts/run_pipeline.py"], "check-secrets": ["scripts/check_secrets.py"]}[args.command]
-    subprocess.run([python, *command, *extra], cwd=ROOT, check=True)
+        python = selected_python(force_current=args.current)
+        command = {
+            "test": ["-m", "pytest"],
+            "download": ["scripts/download_data.py"],
+            "run": ["scripts/run_pipeline.py"],
+            "check-secrets": ["scripts/check_secrets.py"],
+        }[args.command]
+
+    subprocess.run(
+        [python, *command, *extra],
+        cwd=ROOT,
+        check=True,
+    )
 
 
 if __name__ == "__main__":
