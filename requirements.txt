@@ -1,3 +1,3 @@
-# Run from the repository root. Includes the editable project and PyYAML.
+# Portable pip/Colab environment.
 -e .
 pytest>=8,<9
