@@ -40,12 +40,22 @@ python manage.py test
 
 ### Conda / Colab / ENSMA
 
+In Google Colab, `manage.py` now detects the notebook runtime automatically and uses the current Python interpreter instead of creating a nested virtual environment.
+
 ```bash
-pip install -r requirements.txt
-python manage.py download --current
-python manage.py run --current
-python manage.py test --current
+python manage.py setup
+python manage.py download
+python manage.py run
+python manage.py test
 ```
+
+If a broken `.venv` was created by an older version of the project in the current Colab session, remove it once before retrying:
+
+```bash
+rm -rf .venv
+```
+
+The explicit `--current` flag remains available for Conda or other managed environments.
 
 To refresh the locally cached JPL payload:
 
