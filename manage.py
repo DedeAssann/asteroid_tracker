@@ -40,7 +40,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "command",
-        choices=["setup", "test", "download", "run", "check-secrets"],
+        choices=["setup", "test", "download", "run", "analyze", "check-secrets"],
     )
     parser.add_argument(
         "--current",
@@ -74,6 +74,7 @@ def main():
             "test": ["-m", "pytest"],
             "download": ["scripts/download_data.py"],
             "run": ["scripts/run_pipeline.py"],
+            "analyze": ["scripts/analyze_data.py"],
             "check-secrets": ["scripts/check_secrets.py"],
         }[args.command]
 
