@@ -2,7 +2,7 @@
 
 Portable scientific Python project for exploring **near-Earth object (NEO) close approaches** using official NASA/JPL SSD/CNEOS data.
 
-## Current milestone — first v0.2 analysis increment
+## Current milestone — v0.2.2 close-approach kinematics
 
 The first version intentionally focuses on a small, reproducible pipeline:
 
@@ -150,6 +150,161 @@ Tests use synthetic local CSVs, independent numerical conversion references,
 ties, nulls, invalid values, partial bounds, empty inputs and a subprocess with
 network connections blocked. Run the full suite with `python manage.py test`.
 
+## Offline close-approach kinematics (v0.2.2)
+
+Use the existing processed CSV; this command never downloads or normalizes data:
+
+```bash
+python manage.py analyze-velocity
+# If you know the input contains Earth encounters but it has no body column:
+python manage.py analyze-velocity --assume-body Earth
+# Optional configuration and interpreter selection:
+python manage.py analyze-velocity --current --config configs/default.yaml
+```
+
+No new dependencies are required. Existing commands and artifacts are preserved.
+The new files are:
+
+```text
+outputs/figures/velocity_distribution.png
+outputs/figures/distance_vs_velocity.png
+outputs/figures/relative_vs_infinity_velocity.png
+outputs/velocity_analysis_summary.json
+```
+
+All input encounters are considered, including repeated objects; there is no
+ranking or top-ten truncation. Each observable has its own valid population:
+
+- The relative-velocity histogram uses every valid `v_rel`, with sample count,
+  median and minimum–maximum range. Ten equal-width bins span zero to the sample
+  maximum (zero-only samples use a 0–1 km/s plotting interval).
+- The distance–velocity scatter uses rows with valid `dist` and `v_rel`.
+  Distance is recomputed from au using the existing fixed LD convention.
+- The velocity comparison uses rows with both `v_inf` (horizontal axis) and
+  `v_rel` (vertical axis), with equal axis scales and a 1:1 reference line.
+
+The JSON reports count, mean, median, minimum and maximum for each observable,
+plot sample sizes, input SHA-256/path/byte size/columns, completeness categories,
+body assumptions, and all encounter-level residuals or skip reasons. Statistics
+are descriptive of this selected CSV, not a debiased asteroid population.
+Mixed bodies are included in descriptive plots; body counts are reported in JSON.
+Neither speed nor distance is a hazard score.
+
+### Earth two-body consistency diagnostic
+
+For eligible Earth encounters, compute
+
+```text
+r = dist_au * 149597870.7 km
+R = v_rel² - v_inf² - 2 * 398600.4418 / r   [km²/s²]
+```
+
+Here `mu_E = 398600.4418 km³/s²`, and `r` is nominal **center-to-center distance**,
+not altitude. In an isolated Earth–massless-object two-body model, conservation
+of specific orbital energy implies R near zero. This is a **simplified
+consistency check**, not independent validation of JPL's numerical trajectory.
+Other bodies, non-two-body effects, the CAD velocity definitions and rounding
+can affect this relation. The [JPL CAD documentation](https://ssd-api.jpl.nasa.gov/doc/cad.html)
+defines `v_rel` relative to the approach body and `v_inf` relative to a massless
+body. We do not fit a trajectory, infer velocity uncertainties, propagate distance
+bounds as velocity errors, or turn residuals into impact probabilities.
+
+Signed and absolute residual statistics are included, together with the count of
+evaluated Earth encounters where `v_rel < v_inf`. No observational uncertainties
+or physical acceptance tolerance are supplied, so **no pass/fail verdict** is
+assigned to JPL records. Numerical tests use exact synthetic two-body references.
+
+The CSV `body` label is authoritative for selection (case-insensitive Earth).
+When absent, the body remains unknown unless `--assume-body Earth` is explicitly
+provided. That assumption fills missing bodies only, never overrides a recorded
+non-Earth body, and is counted and saved per event. The current configured query
+is unverified context, not evidence about an older cached CSV; it does not trigger
+Earth classification. This matters because single-body CAD results can omit
+`body`, and v0.1 did not preserve historical query metadata.
+
+### Invalid data and reproducibility
+
+Numeric fields are classified independently as valid, missing, nonnumeric,
+nonfinite, or negative; counts sum to the total records for each field. Empty
+cells and null tokens (`null`, `none`, `na`, `n/a`, case-insensitive) are missing;
+explicit `NaN`/infinities are nonfinite. Missing columns are counted and listed.
+Finite zero velocities and zero distances remain usable for descriptive plots,
+but zero distance cannot enter the energy formula. Negative, nonnumeric and
+nonfinite values are excluded only from calculations requiring that field.
+Unrepresentable derived LD values are counted separately. Energy overflow is
+reported as a numerical-range error, never serialized as NaN or infinity.
+
+One primary energy status is recorded per row, in this precedence order:
+unknown body, non-Earth, missing/invalid input, zero distance, numerical-range
+error, or evaluated. Statistics with no observations are `null` with count zero;
+empty CSVs (including v0.1's blank zero-record file) and entirely invalid samples
+produce labeled no-data figures. A nonempty CSV with none of `dist`, `v_rel`,
+`v_inf` fails clearly. No values or uncertainties are imputed.
+
+The same bytes, paths, configuration and explicit assumption produce identical
+JSON. The SHA-256 covers exactly the bytes read once for analysis. Plotting uses
+Agg without a GUI. WSL and Colab use the same pathlib-based paths and existing
+`SCI_DATA_DIR` / `SCI_OUTPUT_DIR` overrides. PNG bytes may vary with Matplotlib
+and font versions. No SBDB, Horizons, Sentry or interactive dashboard is added.
+
+### Colab validation of this increment
+
+In a fresh Colab notebook, run these cells. Cloning and installing dependencies
+need network access; the tests and analysis use local data only.
+
+```python
+!git clone --branch feat/v0.2.2-close-approach-kinematics https://github.com/DedeAssann/asteroid_tracker.git
+%cd asteroid_tracker
+!python manage.py setup --current
+!python manage.py test --current -q
+```
+
+For a self-contained **synthetic** smoke test (not real JPL observations), use
+isolated directories so an existing processed CSV is not overwritten:
+
+```python
+from pathlib import Path
+import os
+
+root = Path.cwd() / "work" / "colab_kinematics_validation"
+processed = root / "data" / "processed"
+processed.mkdir(parents=True, exist_ok=True)
+(processed / "cad_close_approaches.csv").write_text(
+    "des,dist,v_rel,v_inf,body\n"
+    "SYNTHETIC-A,0.01,8,7,Earth\n"
+    "SYNTHETIC-B,0.02,12,11,Earth\n"
+    "SYNTHETIC-C,0.03,9,,Earth\n",
+    encoding="utf-8",
+)
+os.environ["SCI_DATA_DIR"] = str(root / "data")
+os.environ["SCI_OUTPUT_DIR"] = str(root / "outputs")
+!python manage.py analyze-velocity --current
+```
+
+Inspect the artifacts and provenance:
+
+```python
+import hashlib
+import json
+from IPython.display import Image, display
+
+out = root / "outputs"
+report = json.loads((out / "velocity_analysis_summary.json").read_text())
+assert report["records_analyzed"] == 3
+assert report["energy_consistency"]["records_evaluated"] == 2
+assert report["input_provenance"]["sha256"] == hashlib.sha256(
+    (processed / "cad_close_approaches.csv").read_bytes()
+).hexdigest()
+for name in ("velocity_distribution", "distance_vs_velocity", "relative_vs_infinity_velocity"):
+    display(Image(filename=str(out / "figures" / f"{name}.png")))
+```
+
+For real-data validation, point `SCI_DATA_DIR` at your existing cached processed
+CSV directory and `SCI_OUTPUT_DIR` at a separate validation output directory.
+Use the Earth assumption only if the original query body is known. No download
+command is needed. Automated CLI tests block socket connections, check repeated
+JSON, and verify that previous outputs and input bytes are unchanged.
+
 ## Project structure
 
 ```text
@@ -163,10 +318,13 @@ asteroid_tracker/
 ├── outputs/
 ├── scripts/
 │   ├── analyze_data.py
+│   ├── analyze_velocity.py
 │   ├── download_data.py
 │   └── run_pipeline.py
 ├── src/
 │   └── asteroid_tracker/
+│       ├── velocity_analysis.py
+│       ├── velocity_plotting.py
 │       ├── analysis.py
 │       ├── plotting.py
 │       ├── config.py
@@ -174,6 +332,7 @@ asteroid_tracker/
 │       ├── paths.py
 │       └── pipeline.py
 ├── tests/
+│   ├── test_velocity_analysis.py
 │   ├── test_analysis.py
 │   └── test_asteroid_pipeline.py
 ├── environment.yml
@@ -188,10 +347,8 @@ asteroid_tracker/
 JPL CAD ingestion, local caching, normalized table, basic derived quantities and offline parser tests.
 
 ### v0.2 — analysis
-First increment implemented: closest-approach ranking with JPL 3-sigma bounds.
+Implemented: closest-approach ranking with JPL 3-sigma bounds and v0.2.2 encounter kinematics.
 Other exploratory plots and rankings remain future work:
-- closest approaches;
-- relative velocity;
 - absolute magnitude;
 - diameter where available;
 - uncertainty-aware presentation.
@@ -221,4 +378,4 @@ The project intentionally performs one request at a time and caches the raw resp
 
 ## Status
 
-**v0.1 ingestion plus the first v0.2 increment: offline closest-approach analysis.**
+**v0.1 ingestion plus v0.2 closest-approach analysis and v0.2.2 kinematics.**
