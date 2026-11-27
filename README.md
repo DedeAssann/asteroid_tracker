@@ -305,6 +305,110 @@ Use the Earth assumption only if the original query body is known. No download
 command is needed. Automated CLI tests block socket connections, check repeated
 JSON, and verify that previous outputs and input bytes are unchanged.
 
+## v0.2.3 — Absolute magnitude and diameter
+
+```bash
+python manage.py analyze-physical
+```
+
+This command reads the existing `data/processed/cad_close_approaches.csv`.
+It writes `outputs/physical_analysis_summary.json` and four PNGs under
+`outputs/figures`. Use `--config`, `SCI_DATA_DIR`, or `SCI_OUTPUT_DIR`
+with the same path conventions as the other analyses. Rendering uses Agg
+and all analysis is offline.
+
+| Figure | Population and quantities |
+| --- | --- |
+| `absolute_magnitude_distribution.png` | Encounters with valid H, annotated with count, median and range |
+| `diameter_completeness.png` | Identified objects, counted once each across all encounters |
+| `diameter_albedo_sensitivity.png` | Theoretical curves on a fixed reference grid from H = 10 to 35 mag |
+| `h_vs_known_diameter.png` | Encounters with valid H and positive JPL CAD diameter, with reported ±1σ where present |
+
+H is absolute magnitude in magnitudes, defined at standardized observing
+geometry. It does not give the apparent brightness during an Earth encounter.
+Finite negative H is allowed. Catalog diameter must be finite and positive.
+A finite, nonnegative `diameter_sigma` is a reported absolute 1-sigma
+uncertainty in km. An absent or invalid sigma leaves the point visible
+without error bars. Both quantities come from the same CSV record.
+
+The reference curves use the uniform-surface spherical photometric model:
+
+```text
+D_km = 1329 / sqrt(pV) * 10**(-H/5)
+```
+
+The geometric albedos pV = 0.05, 0.14 and 0.25 are hypothetical and dimensionless.
+They illustrate sensitivity to surface reflectivity. No object is assigned an
+albedo or a photometric diameter. The curves are separate from the JPL catalog
+diameters and do not represent empirical uncertainty bands. H and the model
+assumptions also contribute uncertainty. The analysis makes no hazard inference.
+See the [CNEOS size estimator](https://cneos.jpl.nasa.gov/tools/ast_size_est.html)
+and the [JPL CAD field documentation](https://ssd-api.jpl.nasa.gov/doc/cad.html).
+
+Object coverage groups exact trimmed `des` labels. For rows with no designation,
+`fullname` can link to a single designation observed in the CSV or form its own
+group if there is no such link. Ambiguous or absent identifiers are counted
+separately. An object is known if any encounter supplies a valid diameter,
+invalid if it has unusable values but no valid diameter, and missing if all of
+its entries are missing. Repeated encounters still contribute individually to
+the H distribution and scatter. Undocumented aliases can affect the object count.
+
+Missing fields and blank cells are tracked. Invalid numeric values are broken out
+by reason. The ingestion pipeline can coerce unusable source values to blanks
+before this analysis sees them. The JSON records the CSV columns and SHA-256 of
+the exact bytes read. Query filters, discovery bias toward easier-to-detect
+objects, and selective follow-up for diameter determination limit the sample.
+The coverage describes this CSV and cannot establish the fraction of all
+asteroids with known diameters.
+
+### Colab validation with an actual cached JPL CSV
+
+In a fresh notebook, clone the feature branch containing this increment and run
+the suite. Clone and setup need network access.
+
+```python
+!git clone --branch feat/v0.2.3-physical-analysis https://github.com/DedeAssann/asteroid_tracker.git
+%cd asteroid_tracker
+!python manage.py setup --current
+!python manage.py test --current -q
+```
+
+Upload your existing processed JPL CAD CSV when prompted. This example copies
+it to an isolated local directory. For an existing mounted cache, set
+`SCI_DATA_DIR` to the parent of its `processed` directory instead.
+
+```python
+from pathlib import Path
+from google.colab import files
+import os
+
+uploaded = files.upload()
+source = Path("/content/physical-validation/data/processed/cad_close_approaches.csv")
+source.parent.mkdir(parents=True, exist_ok=True)
+source.write_bytes(uploaded["cad_close_approaches.csv"])
+os.environ["SCI_DATA_DIR"] = str(source.parent.parent)
+os.environ["SCI_OUTPUT_DIR"] = "/content/physical-validation/outputs"
+!python manage.py analyze-physical --current
+```
+
+```python
+import hashlib
+import json
+from IPython.display import Image, display
+
+out = Path(os.environ["SCI_OUTPUT_DIR"])
+report = json.loads((out / "physical_analysis_summary.json").read_text())
+assert report["input_provenance"]["sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
+objects = report["identified_objects"]
+assert sum(objects["diameter_coverage"].values()) == objects["count"]
+print(report["encounters"], objects)
+for name in (
+    "absolute_magnitude_distribution", "diameter_completeness",
+    "diameter_albedo_sensitivity", "h_vs_known_diameter",
+):
+    display(Image(filename=str(out / "figures" / f"{name}.png")))
+```
+
 ## Project structure
 
 ```text
@@ -318,11 +422,14 @@ asteroid_tracker/
 ├── outputs/
 ├── scripts/
 │   ├── analyze_data.py
+│   ├── analyze_physical.py
 │   ├── analyze_velocity.py
 │   ├── download_data.py
 │   └── run_pipeline.py
 ├── src/
 │   └── asteroid_tracker/
+│       ├── physical_analysis.py
+│       ├── physical_plotting.py
 │       ├── velocity_analysis.py
 │       ├── velocity_plotting.py
 │       ├── analysis.py
@@ -332,6 +439,7 @@ asteroid_tracker/
 │       ├── paths.py
 │       └── pipeline.py
 ├── tests/
+│   ├── test_physical_analysis.py
 │   ├── test_velocity_analysis.py
 │   ├── test_analysis.py
 │   └── test_asteroid_pipeline.py
@@ -347,7 +455,7 @@ asteroid_tracker/
 JPL CAD ingestion, local caching, normalized table, basic derived quantities and offline parser tests.
 
 ### v0.2 — analysis
-Implemented: closest-approach ranking with JPL 3-sigma bounds and v0.2.2 encounter kinematics.
+Implemented: closest-approach ranking with JPL 3-sigma bounds, v0.2.2 encounter kinematics, and v0.2.3 photometry and catalog diameter coverage.
 Other exploratory plots and rankings remain future work:
 - absolute magnitude;
 - diameter where available;
