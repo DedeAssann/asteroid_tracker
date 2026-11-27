@@ -5,6 +5,7 @@ import json
 
 from asteroid_tracker.analysis import analyze_csv
 from asteroid_tracker.config import load_config
+from asteroid_tracker.jpl_cad import unverified_configuration
 from asteroid_tracker.paths import child_path, directories
 from asteroid_tracker.plotting import plot_closest_approaches
 
@@ -14,9 +15,7 @@ def run_analysis(config):
     data_dir, output_dir = directories(config)
     processed = child_path(data_dir / "processed", config.get("pipeline", {}).get(
         "processed_csv", "cad_close_approaches.csv"))
-    settings = config.get("jpl_cad", {})
-    # v0.1 does not save the actual download query: configuration is context,
-    # never proof of the query that produced a possibly older cached CSV.
+    settings = unverified_configuration(config.get("jpl_cad"))
     context = None
     if settings:
         context = {
@@ -24,7 +23,7 @@ def run_analysis(config):
             "verified_for_input": False,
             "endpoint": settings.get("endpoint"),
             "query": settings.get("query"),
-            "note": "Historical query unavailable in v0.1; relative dates are not resolved.",
+            "note": "Historical query unverified. These settings describe the current configuration only.",
         }
     summary = analyze_csv(processed, query_context=context)
     figure = plot_closest_approaches(summary, output_dir / "figures" / "closest_approaches.png")

@@ -409,6 +409,133 @@ for name in (
     display(Image(filename=str(out / "figures" / f"{name}.png")))
 ```
 
+## v0.2.4 — Scientific provenance
+
+The existing commands record a local chain from the HTTP request to the
+scientific outputs:
+
+```bash
+python manage.py download
+python manage.py run
+python manage.py analyze
+python manage.py analyze-velocity
+python manage.py analyze-physical
+```
+
+With the default names, the raw sidecar is
+`data/raw/cad_close_approaches.json.acquisition.json` and the processed sidecar
+is `data/processed/cad_close_approaches.csv.processing.json`. Both default
+directories and customizable artifact names work with the same path settings as
+the data files.
+
+### Sidecar schema v1
+
+| Location | Meaning |
+| --- | --- |
+| Acquisition `request` | Initial endpoint and ordered, decoded query parameters from the actual prepared HTTP request. `final_url` records the request URL after redirects, with user information, fragments and undocumented query values removed or redacted. Keep credentials out of configured URL paths and public CAD parameters. |
+| Acquisition `request.relative_date_inputs` and `request.final_relative_date_inputs` | Relative input literals such as `now` and `+30`. The client does not resolve them or know the exact bounds used internally by JPL. |
+| Acquisition `acquired_at_utc` | ISO 8601 UTC client time after receiving and validating a new response, before local publication. The sidecar also records the source, CAD API version, returned record count, and the raw artifact descriptor. |
+| Acquisition `download_status` | `new_acquisition` identifies the event that created the sidecar. A subsequent `cache_hit` is reported by the command and does not change the acquisition time or original request. |
+| Processing `processed_at_utc` | ISO 8601 UTC client time after creating the CSV bytes, before local publication. The sidecar records the normalization settings, Python and pandas versions, normalization and implementation versions, row count, and raw and CSV artifact descriptors. |
+| Artifact descriptor | Historical path, byte count and SHA-256 of exactly the bytes saved or consumed. Paths are informative. A relocated archive remains verifiable. Hash matches establish local byte identity relative to a receipt. They do not authenticate the external source. |
+| Processing `acquisition` | Snapshot of the acquisition receipt verified against the raw bytes at processing time, or a `missing` status for a legacy raw file. |
+| Analysis `input_provenance.chain` | All three analyses verify the local CSV hash and row count against the processing receipt, then check the embedded acquisition linkage. `complete` means the CSV was checked during analysis and the raw acquisition was checked at processing time. Archive verification against the raw file itself is shown below. |
+| Analysis `analysis_execution` | Each execution is offline. Reports omit execution timestamps so reruns against the same CSV, receipts and analysis options remain deterministic. Reprocessing creates a new processing timestamp and receipt. |
+
+A default download reuses existing raw data and verifies its receipt when
+available. Legacy raw files with no receipt remain usable, with unknown
+historical request details. A hash mismatch or unusable acquisition receipt
+blocks the cache hit and processing, with no automatic network refresh. Restore
+a matching pair or explicitly issue `download --force` for a new acquisition.
+An analysis can still use a standalone readable CSV with missing, invalid or
+stale processing metadata. Its chain is marked incomplete and historical query
+details are withheld. Existing distance and velocity reports can still show
+current configuration as explicitly unverified context.
+
+### Interrupted writes and recovery
+
+Writers stage and flush a receipt before atomically replacing the data file.
+They then replace the committed receipt with the staged receipt. If a write
+stops before the data replacement, the old data and receipt remain usable. If
+it stops after replacement, the matching `.pending` receipt is recognized by
+hash and labeled as pending. A cache hit can promote a matching acquisition
+receipt. Re-run the pipeline to publish a processing receipt after an
+interruption. A failed HTTP request or an invalid new response leaves the
+existing raw file and receipt intact.
+
+Writers use an exclusive `.provenance.lock` directory. After an abrupt process
+termination, confirm that no writer is active before removing a leftover
+lock directory. Keep both receipts while recovering and preserve whichever
+matches the data. A leftover temporary file from a killed writer can be
+removed once activity has stopped. If neither receipt matches, restore the
+archived pair, explicitly acquire new raw data, or reprocess a verified raw
+file as appropriate. These guarantees rely on atomic same-directory
+replacement on the local filesystem. Use the local Colab filesystem for
+processing, then copy both artifacts and their receipts to durable storage.
+
+### Verify an archive in Colab
+
+Clone the feature branch containing v0.2.4 and install the project:
+
+```python
+!git clone --branch feat/v0.2.4-scientific-provenance https://github.com/DedeAssann/asteroid_tracker.git
+%cd asteroid_tracker
+!python manage.py setup --current
+!python manage.py test --current -q
+```
+
+Copy your archive's `raw` and `processed` directories, including their receipts,
+to `/content/cad-archive`. Run the three analyses against that CSV. To assemble
+a new chain, start with an empty archive directory and uncomment the optional
+download and processing commands. Archive the resulting data and both receipts.
+Repeating a live query at a later date is a new acquisition even when its query
+text is identical.
+
+```python
+import os
+
+os.environ["SCI_DATA_DIR"] = "/content/cad-archive"
+os.environ["SCI_OUTPUT_DIR"] = "/content/cad-validation"
+# For a new acquisition in an empty archive, uncomment these commands.
+# !python manage.py download --current
+# !python manage.py run --current
+# !python manage.py download --current  # Demonstrate a cache hit.
+!python manage.py analyze --current
+!python manage.py analyze-velocity --current
+!python manage.py analyze-physical --current
+```
+
+```python
+from hashlib import sha256
+import json
+from pathlib import Path
+
+root = Path(os.environ["SCI_DATA_DIR"])
+raw = root / "raw/cad_close_approaches.json"
+csv = root / "processed/cad_close_approaches.csv"
+out = Path(os.environ["SCI_OUTPUT_DIR"])
+acquisition = json.loads(raw.with_suffix(".json.acquisition.json").read_bytes())
+processing = json.loads(csv.with_suffix(".csv.processing.json").read_bytes())
+raw_digest = sha256(raw.read_bytes()).hexdigest()
+csv_digest = sha256(csv.read_bytes()).hexdigest()
+
+assert acquisition["raw"]["sha256"] == processing["raw"]["sha256"] == raw_digest
+assert processing["acquisition"]["metadata"] == acquisition
+assert processing["csv"]["sha256"] == csv_digest
+for name in ("analysis_summary", "velocity_analysis_summary", "physical_analysis_summary"):
+    report = json.loads((out / f"{name}.json").read_bytes())
+    provenance = report["input_provenance"]
+    assert provenance["sha256"] == csv_digest
+    assert provenance["chain"]["status"] == "complete"
+    assert provenance["chain"]["processing"]["metadata"] == processing
+print(acquisition["acquired_at_utc"], acquisition["request"]["relative_date_inputs"])
+```
+
+When using a legacy archive, run the analysis and inspect the incomplete status
+instead of expecting these assertions to pass. Retain the original raw bytes,
+CSV bytes and both sidecars for a complete archive. Use the recorded Python
+and pandas versions and CSV line terminator when checking byte-for-byte regeneration.
+
 ## Project structure
 
 ```text
@@ -428,6 +555,7 @@ asteroid_tracker/
 │   └── run_pipeline.py
 ├── src/
 │   └── asteroid_tracker/
+│       ├── provenance.py
 │       ├── physical_analysis.py
 │       ├── physical_plotting.py
 │       ├── velocity_analysis.py
@@ -439,6 +567,7 @@ asteroid_tracker/
 │       ├── paths.py
 │       └── pipeline.py
 ├── tests/
+│   ├── test_provenance.py
 │   ├── test_physical_analysis.py
 │   ├── test_velocity_analysis.py
 │   ├── test_analysis.py

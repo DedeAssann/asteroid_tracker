@@ -6,7 +6,6 @@ this module deliberately does not infer impact probability or danger.
 
 from __future__ import annotations
 
-import hashlib
 from io import BytesIO
 import math
 from pathlib import Path
@@ -14,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 
 from .pipeline import AU_KM, LUNAR_DISTANCE_KM
+from .provenance import analysis_input_provenance, historical_query_context
 
 DISTANCE_FIELDS = ("dist", "dist_min", "dist_max")
 TEXT_FIELDS = ("des", "fullname", "cd", "orbit_id", "body")
@@ -133,12 +133,8 @@ def analyze_csv(path, query_context=None):
         # v0.1 writes a blank CSV for a zero-record response.
         frame = pd.DataFrame()
     result = analyze_frame(frame)
-    result["input_provenance"] = {
-        "processed_csv": path.resolve().as_posix(),
-        "sha256": hashlib.sha256(content).hexdigest(),
-        "size_bytes": len(content),
-        "columns": list(frame.columns),
-        "source_record_definition": "1-based data record, excluding the header",
-    }
-    result["query_context"] = query_context
+    result["input_provenance"] = analysis_input_provenance(
+        path, content, frame, "1-based data record, excluding the header",
+    )
+    result["query_context"] = historical_query_context(result["input_provenance"], query_context)
     return result

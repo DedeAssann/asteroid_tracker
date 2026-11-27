@@ -1,14 +1,15 @@
 """File I/O and orchestration for offline v0.2.2 kinematics."""
 
 import argparse
-import hashlib
 from io import BytesIO
 import json
 
 import pandas as pd
 
 from asteroid_tracker.config import load_config
+from asteroid_tracker.jpl_cad import unverified_configuration
 from asteroid_tracker.paths import child_path, directories
+from asteroid_tracker.provenance import analysis_input_provenance, historical_query_context
 from asteroid_tracker.velocity_analysis import analyze_velocity_frame
 from asteroid_tracker.velocity_plotting import velocity_figures
 
@@ -25,17 +26,15 @@ def run_velocity_analysis(config, assume_body=None):
     except pd.errors.EmptyDataError:
         frame = pd.DataFrame()
     summary = analyze_velocity_frame(frame, assume_body=assume_body)
-    summary["input_provenance"] = {
-        "processed_csv": path.resolve().as_posix(),
-        "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content),
-        "columns": list(frame.columns), "source_record_definition": "1-based data record excluding header",
-    }
-    # Current settings remain useful context, but cannot authenticate cached data.
-    summary["query_context"] = {
+    summary["input_provenance"] = analysis_input_provenance(
+        path, content, frame, "1-based data record excluding header",
+    )
+
+    summary["query_context"] = historical_query_context(summary["input_provenance"], {
         "source": "current_configuration", "verified_for_input": False,
-        "settings": config.get("jpl_cad"),
-        "note": "Historical query unknown; configuration is not used to infer encounter body.",
-    }
+        "settings": unverified_configuration(config.get("jpl_cad")),
+        "note": "Historical query unverified. Configuration is not used to infer encounter body.",
+    })
     serialized = json.dumps(summary, indent=2, allow_nan=False) + "\n"
     destination = output_dir / "figures"
     destination.mkdir(parents=True, exist_ok=True)

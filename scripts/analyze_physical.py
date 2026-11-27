@@ -1,7 +1,6 @@
 """Read the cached processed CSV and write offline v0.2.3 analysis outputs."""
 
 import argparse
-import hashlib
 from io import BytesIO
 import json
 
@@ -9,6 +8,7 @@ import pandas as pd
 
 from asteroid_tracker.config import load_config
 from asteroid_tracker.paths import child_path, directories
+from asteroid_tracker.provenance import analysis_input_provenance
 from asteroid_tracker.physical_analysis import analyze_physical_frame
 from asteroid_tracker.physical_plotting import physical_figures
 
@@ -24,13 +24,9 @@ def run_physical_analysis(config):
     except pd.errors.EmptyDataError:
         frame = pd.DataFrame()
     summary = analyze_physical_frame(frame)
-    summary["input_provenance"] = {
-        "processed_csv": path.resolve().as_posix(),
-        "sha256": hashlib.sha256(content).hexdigest(),
-        "size_bytes": len(content),
-        "columns": list(frame.columns),
-        "source_record_definition": "1-based data record excluding header",
-    }
+    summary["input_provenance"] = analysis_input_provenance(
+        path, content, frame, "1-based data record excluding header",
+    )
 
     serialized = json.dumps(summary, indent=2, allow_nan=False) + "\n"
     destination = output_dir / "figures"
